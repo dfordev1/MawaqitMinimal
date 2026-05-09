@@ -110,6 +110,12 @@ body.final .countdown {
 <body>
 
 <div class="wrap">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;font-size:14px;opacity:.8;flex-wrap:wrap">
+    <button id="autoBtn" style="padding:4px 8px">Auto location</button>
+    <input id="latInput" type="number" step="0.0001" placeholder="Latitude" style="width:110px;padding:4px 6px">
+    <input id="lngInput" type="number" step="0.0001" placeholder="Longitude" style="width:110px;padding:4px 6px">
+    <button id="manualBtn" style="padding:4px 8px">Set manual</button>
+  </div>
   <div class="prayer" id="pname"></div>
   <div class="countdown" id="cd"></div>
 </div>
@@ -163,10 +169,31 @@ function getPrayers(lat, lng) {
   ];
 }
 
-/* ── state — Srinagar, J&K, India ── */
-const lat = 34.0837, lng = 74.7973;
+/* ── state — default Srinagar, J&K, India ── */
+let lat = 34.0837, lng = 74.7973;
 let prayers = getPrayers(lat, lng);
 let currentPrayer = null;
+let prayerDateKey = new Date().toDateString();
+
+function setLocation(newLat, newLng, persist = true) {
+  if (!Number.isFinite(newLat) || !Number.isFinite(newLng)) return;
+  lat = newLat;
+  lng = newLng;
+  prayers = getPrayers(lat, lng);
+  prayerDateKey = new Date().toDateString();
+  if (persist) localStorage.setItem('mwq_location', JSON.stringify({ lat, lng }));
+  document.getElementById('latInput').value = lat.toFixed(4);
+  document.getElementById('lngInput').value = lng.toFixed(4);
+  render();
+}
+
+function useAutoLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => setLocation(pos.coords.latitude, pos.coords.longitude),
+    () => {}
+  );
+}
 
 /* ── sky palettes ── */
 const SKY = {
@@ -216,6 +243,10 @@ function humanCountdown(totalSec) {
 /* ── render ── */
 function render() {
   const now = new Date();
+  if (now.toDateString() !== prayerDateKey) {
+    prayers = getPrayers(lat, lng);
+    prayerDateKey = now.toDateString();
+  }
   const nm = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
 
   const nxt = prayers.find(p => (p.t % 1440) > nm) || prayers[0];
@@ -251,6 +282,25 @@ document.getElementById('cd').textContent = '';
 render();
 // Apply initial sky without waiting for prayer change detection
 applySky((prayers.find(p => (p.t % 1440) > (new Date().getHours()*60+new Date().getMinutes())) || prayers[0]).n);
+
+document.getElementById('manualBtn').addEventListener('click', () => {
+  const la = parseFloat(document.getElementById('latInput').value);
+  const ln = parseFloat(document.getElementById('lngInput').value);
+  setLocation(la, ln);
+});
+
+document.getElementById('autoBtn').addEventListener('click', useAutoLocation);
+
+const saved = localStorage.getItem('mwq_location');
+if (saved) {
+  try {
+    const p = JSON.parse(saved);
+    setLocation(Number(p.lat), Number(p.lng), false);
+  } catch (_) {}
+} else {
+  setLocation(lat, lng, false);
+}
+
 setInterval(render, 1000);
 </script>
 </body>
