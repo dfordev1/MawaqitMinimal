@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mawaqit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0d0d;
+  transition: background 2s ease, color 2s ease;
+  font-family: 'Cormorant', Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  color: #fff;
+}
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0 40px;
+}
+
+.prayer {
+  font-size: clamp(72px, 20vw, 120px);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 0.88;
+  color: inherit;
+  transition: color 2s ease;
+  will-change: opacity, transform;
+}
+
+.prayer.leaving {
+  animation: leave 0.5s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.prayer.entering {
+  animation: enter 0.7s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@keyframes leave {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
+
+@keyframes enter {
+  0%   { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.countdown {
+  font-family: 'Cormorant', serif;
+  font-size: clamp(32px, 9vw, 52px);
+  font-weight: 300;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  opacity: 0.42;
+  margin-top: 14px;
+  transition: color 2s ease, font-size 0.6s cubic-bezier(0.16,1,0.3,1), opacity 0.6s ease;
+  will-change: opacity, font-size;
+}
+
+/* last 60s: full screen takeover */
+body.final .wrap {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+body.final #pname {
+  animation: fadeout-name 0.6s cubic-bezier(0.4,0,1,1) forwards;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+}
+
+body.final .countdown {
+  font-size: clamp(120px, 38vw, 260px);
+  font-weight: 300;
+  font-style: normal;
+  opacity: 1;
+  margin-top: 0;
+  letter-spacing: -0.05em;
+  line-height: 0.85;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="prayer" id="pname"></div>
+  <div class="countdown" id="cd"></div>
+</div>
+
+<script>
+'use strict';
+
+const D = Math.PI / 180;
+
+function jd(d) {
+  const Y = d.getFullYear(), M = d.getMonth() + 1, DD = d.getDate();
+  const A = Math.floor(Y / 100), B = 2 - A + Math.floor(A / 4);
+  return Math.floor(365.25 * (Y + 4716)) + Math.floor(30.6001 * (M + 1)) + DD + B - 1524.5;
+}
+
+function sun(j) {
+  const n = j - 2451545;
+  const L = (280.46 + 0.9856474 * n) % 360;
+  const g = (357.528 + 0.9856003 * n) * D;
+  const e2 = (L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * D;
+  const ep = (23.439 - 0.0000004 * n) * D;
+  return {
+    dec: Math.asin(Math.sin(ep) * Math.sin(e2)) / D,
+    eqt: L - Math.atan2(Math.cos(ep) * Math.sin(e2), Math.cos(e2)) / D
+  };
+}
+
+function ha(lat, dec, alt) {
+  return Math.acos(Math.max(-1, Math.min(1,
+    (Math.sin(alt * D) - Math.sin(lat * D) * Math.sin(dec * D)) /
+    (Math.cos(lat * D) * Math.cos(dec * D))
+  ))) / D;
+}
+
+function toMins(frac) {
+  let f = ((frac % 24) + 24) % 24;
+  const h = Math.floor(f), mn = Math.round((f - h) * 60);
+  return mn === 60 ? (h + 1) * 60 : h * 60 + mn;
+}
+
+function getPrayers(lat, lng) {
+  const j = jd(new Date());
+  const { dec, eqt } = sun(j);
+  const noon = 12 - eqt / 15 - lng / 15 + (new Date().getTimezoneOffset() / -60);
+  return [
+    { n: 'Fajr',    t: toMins(noon - ha(lat, dec, -18) / 15) },
+    { n: 'Dhuhr',   t: toMins(noon + 0.033) },
+    { n: 'Asr',     t: toMins(noon + Math.acos(1 / (2 + Math.tan(Math.abs(lat - dec) * D))) / D / 15) },
+    { n: 'Maghrib', t: toMins(noon + ha(lat, dec, -0.833) / 15) },
+    { n: 'Isha',    t: toMins(noon + ha(lat, dec, -17) / 15) }
+  ];
+}
+
+/* ── state — Srinagar, J&K, India ── */
+const lat = 34.0837, lng = 74.7973;
+let prayers = getPrayers(lat, lng);
+let currentPrayer = null;
+
+/* ── sky palettes ── */
+const SKY = {
+  Fajr:    { bg: '#0e1a2b', fg: '#c8d8f0' }, // deep navy, pre-dawn blue
+  Dhuhr:   { bg: '#e8e0d0', fg: '#1a1410' }, // bleached stone, harsh noon
+  Asr:     { bg: '#c97a2a', fg: '#fdf0e0' }, // amber, Dal Lake gold
+  Maghrib: { bg: '#7a2a1a', fg: '#fde8d8' }, // terracotta, Kashmir dusk
+  Isha:    { bg: '#0a0a10', fg: '#d0cce8' }, // near-black, cool night
+};
+
+function applySky(prayerName) {
+  const s = SKY[prayerName] || SKY.Isha;
+  document.body.style.background = s.bg;
+  document.body.style.color = s.fg;
+}
+
+/* ── transition ── */
+function transitionName(newName) {
+  const el = document.getElementById('pname');
+  if (el.textContent === newName) return;
+
+  el.classList.add('leaving');
+  setTimeout(() => {
+    el.textContent = newName;
+    el.classList.remove('leaving');
+    el.classList.add('entering');
+    setTimeout(() => el.classList.remove('entering'), 700);
+  }, 500); // exactly half of 1.2s — out then in
+}
+
+/* ── human language ── */
+function humanCountdown(totalSec) {
+  if (totalSec <= 60) {
+    // last 60s: just the number, massive
+    return { number: String(Math.max(0, totalSec)), unit: 'seconds', final: true };
+  }
+  const dm = Math.ceil(totalSec / 60);
+  if (dm < 60) {
+    return { number: String(dm), unit: dm === 1 ? 'minute' : 'minutes', final: false };
+  }
+  const dh = Math.floor(totalSec / 3600);
+  const rm = Math.round((totalSec % 3600) / 60);
+  if (rm === 0) return { number: String(dh), unit: dh === 1 ? 'hour' : 'hours', final: false };
+  return { number: `${dh}h ${rm}m`, unit: '', final: false };
+}
+
+/* ── render ── */
+function render() {
+  const now = new Date();
+  const nm = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+
+  const nxt = prayers.find(p => (p.t % 1440) > nm) || prayers[0];
+
+  let diff = (nxt.t % 1440) - nm;
+  if (diff < 0) diff += 1440;
+
+  const totalSec = Math.round(diff * 60);
+  const { number, unit, final } = humanCountdown(totalSec);
+
+  // Prayer name — animated transition + sky color
+  if (nxt.n !== currentPrayer) {
+    transitionName(nxt.n);
+    applySky(nxt.n);
+    currentPrayer = nxt.n;
+  }
+
+  // Final 60s takeover
+  if (final) {
+    document.body.classList.add('final');
+    document.getElementById('cd').innerHTML =
+      `<span style="display:block;line-height:0.85">${number}</span>` +
+      `<span style="display:block;font-size:0.28em;opacity:0.5;letter-spacing:0.06em;text-transform:uppercase;margin-top:0.2em">${unit}</span>`;
+  } else {
+    document.body.classList.remove('final');
+    document.getElementById('cd').textContent = unit ? `${number} ${unit}` : number;
+  }
+}
+
+// Boot instantly — no flash of empty
+document.getElementById('pname').textContent = '';
+document.getElementById('cd').textContent = '';
+render();
+// Apply initial sky without waiting for prayer change detection
+applySky((prayers.find(p => (p.t % 1440) > (new Date().getHours()*60+new Date().getMinutes())) || prayers[0]).n);
+setInterval(render, 1000);
+</script>
+</body>
+</html>
