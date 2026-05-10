@@ -115,6 +115,16 @@ body.final .countdown {
     <input id="latInput" type="number" step="0.0001" placeholder="Latitude" style="width:110px;padding:4px 6px">
     <input id="lngInput" type="number" step="0.0001" placeholder="Longitude" style="width:110px;padding:4px 6px">
     <button id="manualBtn" style="padding:4px 8px">Set manual</button>
+    <select id="methodSelect" style="padding:4px 6px">
+      <option value="3">Muslim World League</option>
+      <option value="2">ISNA</option>
+      <option value="5">Egyptian</option>
+      <option value="4">Umm Al-Qura</option>
+      <option value="1">Karachi</option>
+      <option value="7">Tehran</option>
+      <option value="0">Jafari</option>
+    </select>
+    <span id="syncStatus" style="font-size:11px;opacity:.6;white-space:nowrap"></span>
   </div>
   <div class="prayer" id="pname"></div>
   <div class="countdown" id="cd"></div>
@@ -174,6 +184,127 @@ let lat = 34.0837, lng = 74.7973;
 let prayers = getPrayers(lat, lng);
 let currentPrayer = null;
 let prayerDateKey = new Date().toDateString();
+let calcMethod = 3; // Muslim World League default
+
+/* ── sync status ── */
+function setSyncStatus(source) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (source === 'synced') {
+    el.innerHTML = '<span style="color:#4caf50">&#9679;</span> Synced';
+  } else if (source === 'cached') {
+    el.innerHTML = '<span style="color:#ff9800">&#9679;</span> Cached';
+  } else {
+    el.innerHTML = '<span style="color:#9e9e9e">&#9679;</span> Local';
+  }
+}
+
+/* ── Aladhan API fetch ── */
+async function fetchApiPrayerTimes(lat, lng, method) {
+  try {
+    const ts = Math.floor(Date.now() / 1000);
+    const url = 'https://api.aladhan.com/v1/timings/' + ts + '?latitude=' + lat + '&longitude=' + lng + '&method=' + method;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const timings = data.data.timings;
+    const names = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    const result = [];
+    for (let i = 0; i < names.length; i++) {
+      const raw = timings[names[i]];
+      if (!raw) return null;
+      const parts = raw.split(':');
+      const mins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      result.push({ n: names[i], t: mins });
+    }
+    return result;
+  } catch (e) {
+    return null;
+  }
+}
+
+/* ── localStorage caching ── */
+function getCachedTimes() {
+  try {
+    const raw = localStorage.getItem('mwq_api_times');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedTimes(times) {
+  const now = new Date();
+  const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const entry = {
+    date: dateStr,
+    lat: lat,
+    lng: lng,
+    method: calcMethod,
+    times: times,
+    fetchedAt: now.toISOString()
+  };
+  localStorage.setItem('mwq_api_times', JSON.stringify(entry));
+}
+
+function isCacheValid(cache) {
+  if (!cache) return false;
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  if (cache.date !== todayStr) return false;
+  if (Math.abs(cache.lat - lat) > 0.01) return false;
+  if (Math.abs(cache.lng - lng) > 0.01) return false;
+  if (cache.method !== calcMethod) return false;
+  return true;
+}
+
+/* ── sync orchestration ── */
+async function syncPrayerTimes() {
+  // Try cache first for immediate display
+  const cache = getCachedTimes();
+  if (isCacheValid(cache)) {
+    prayers = cache.times;
+    setSyncStatus('cached');
+  }
+
+  // If online, try API
+  if (navigator.onLine) {
+    const apiTimes = await fetchApiPrayerTimes(lat, lng, calcMethod);
+    if (apiTimes) {
+      prayers = apiTimes;
+      setCachedTimes(apiTimes);
+      setSyncStatus('synced');
+      render();
+      return;
+    }
+  }
+
+  // If we already applied cache above, we are done
+  if (isCacheValid(cache)) {
+    render();
+    return;
+  }
+
+  // Fallback to local calculation
+  prayers = getPrayers(lat, lng);
+  setSyncStatus('local');
+  render();
+}
+
+/* ── connectivity events ── */
+window.addEventListener('online', function() {
+  syncPrayerTimes();
+});
+
+window.addEventListener('offline', function() {
+  const cache = getCachedTimes();
+  if (isCacheValid(cache)) {
+    setSyncStatus('cached');
+  } else {
+    setSyncStatus('local');
+  }
+});
 
 function setLocation(newLat, newLng, persist = true) {
   if (!Number.isFinite(newLat) || !Number.isFinite(newLng)) return;
@@ -185,6 +316,7 @@ function setLocation(newLat, newLng, persist = true) {
   document.getElementById('latInput').value = lat.toFixed(4);
   document.getElementById('lngInput').value = lng.toFixed(4);
   render();
+  syncPrayerTimes();
 }
 
 function useAutoLocation() {
@@ -246,6 +378,7 @@ function render() {
   if (now.toDateString() !== prayerDateKey) {
     prayers = getPrayers(lat, lng);
     prayerDateKey = now.toDateString();
+    syncPrayerTimes();
   }
   const nm = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
 
@@ -291,6 +424,20 @@ document.getElementById('manualBtn').addEventListener('click', () => {
 
 document.getElementById('autoBtn').addEventListener('click', useAutoLocation);
 
+// Load saved method
+const savedMethod = localStorage.getItem('mwq_method');
+if (savedMethod !== null) {
+  calcMethod = parseInt(savedMethod, 10);
+  document.getElementById('methodSelect').value = String(calcMethod);
+}
+
+// Method dropdown change
+document.getElementById('methodSelect').addEventListener('change', function() {
+  calcMethod = parseInt(this.value, 10);
+  localStorage.setItem('mwq_method', String(calcMethod));
+  syncPrayerTimes();
+});
+
 const saved = localStorage.getItem('mwq_location');
 if (saved) {
   try {
@@ -302,6 +449,9 @@ if (saved) {
 }
 
 setInterval(render, 1000);
+
+// Initial sync on page load
+syncPrayerTimes();
 </script>
 </body>
 </html>
