@@ -30,9 +30,11 @@ body {
 .wrap {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 0;
   padding: 0 40px;
+  text-align: center;
 }
 
 .prayer {
@@ -110,7 +112,7 @@ body.final .countdown {
 <body>
 
 <div class="wrap">
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;font-size:14px;opacity:.8;flex-wrap:wrap">
+  <div style="display:none">
     <button id="autoBtn" style="padding:4px 8px">Auto location</button>
     <input id="latInput" type="number" step="0.0001" placeholder="Latitude" style="width:110px;padding:4px 6px">
     <input id="lngInput" type="number" step="0.0001" placeholder="Longitude" style="width:110px;padding:4px 6px">
