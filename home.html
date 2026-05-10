@@ -195,7 +195,7 @@ function setSyncStatus(source) {
   } else if (source === 'cached') {
     el.innerHTML = '<span style="color:#ff9800">&#9679;</span> Cached';
   } else {
-    el.innerHTML = '<span style="color:#9e9e9e">&#9679;</span> Local';
+    el.innerHTML = '<span style="color:#9e9e9e">&#9679;</span> Local (fixed angles)';
   }
 }
 
@@ -204,7 +204,7 @@ async function fetchApiPrayerTimes(lat, lng, method) {
   try {
     const ts = Math.floor(Date.now() / 1000);
     const url = 'https://api.aladhan.com/v1/timings/' + ts + '?latitude=' + lat + '&longitude=' + lng + '&method=' + method;
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) return null;
     const data = await resp.json();
     const timings = data.data.timings;
@@ -376,7 +376,6 @@ function humanCountdown(totalSec) {
 function render() {
   const now = new Date();
   if (now.toDateString() !== prayerDateKey) {
-    prayers = getPrayers(lat, lng);
     prayerDateKey = now.toDateString();
     syncPrayerTimes();
   }
@@ -450,8 +449,6 @@ if (saved) {
 
 setInterval(render, 1000);
 
-// Initial sync on page load
-syncPrayerTimes();
 </script>
 </body>
 </html>
